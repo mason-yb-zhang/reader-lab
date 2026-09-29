@@ -1,0 +1,8 @@
+*.go text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+assets/** -text
+App/book-reader/assets/** -text
+third-party/** -text

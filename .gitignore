@@ -1,0 +1,10 @@
+build/
+private/
+*.token
+.env
+.env.*
+*.log
+.venv/
+__pycache__/
+*.exe
+*.img
