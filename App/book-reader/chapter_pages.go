@@ -60,8 +60,9 @@ func (index *chapterPages) pageAt(offset int64) int {
 
 func (app *readerApp) chapterPagesMatch() bool {
 	index := app.chapterPagination
+	layout := app.pageLayout()
 	return index != nil && app.document != nil && app.chapterIndex >= 0 && app.chapterIndex < len(app.document.Chapters) &&
-		index.matches(app.document, app.document.Chapters[app.chapterIndex], app.bodyFace, readerTextWidth, app.readerBodyHeight())
+		index.matches(app.document, app.document.Chapters[app.chapterIndex], app.bodyFace, layout.textWidth, app.readerBodyHeight())
 }
 
 // chapterPageLabel is deliberately read-only and performs no filesystem I/O.
@@ -86,10 +87,11 @@ func (app *readerApp) countedChapter(chapterIndex int) (*chapterPages, error) {
 func (app *readerApp) countedChapterForLayout(chapterIndex, height int) (*chapterPages, error) {
 	chapter := app.document.Chapters[chapterIndex]
 	index := app.chapterPagination
-	if index.matches(app.document, chapter, app.bodyFace, readerTextWidth, height) {
+	textWidth := app.pageLayout().textWidth
+	if index.matches(app.document, chapter, app.bodyFace, textWidth, height) {
 		return index, nil
 	}
-	return countChapterPagesForLayout(app.document, chapter, app.bodyFace, readerTextWidth, height)
+	return countChapterPagesForLayout(app.document, chapter, app.bodyFace, textWidth, height)
 }
 
 // readWindow restores exactly the canonical window, rather than repaginating

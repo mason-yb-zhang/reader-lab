@@ -55,7 +55,7 @@ func TestLabNewReaderStartupAndShelfTitle(t *testing.T) {
 		t.Fatal("lab startup changed the initial shelf or original body face")
 	}
 	expected := c1device.NewCanvas()
-	app.renderList(expected, "墨页实验室", nil, 0, "本", "↑↓选择  →打开  BACK退出")
+	app.renderList(expected, "墨页实验室", nil, 0, "项", app.shelfHint())
 	if app.render() != expected.Frame(128) {
 		t.Fatal("lab shelf title was not installed")
 	}
@@ -153,8 +153,16 @@ func TestLabSettingsKeyboardNavigation(t *testing.T) {
 		t.Fatal("settings fullscreen toggle left settings")
 	}
 	app.handle(c1device.KeyDown)
-	if app.lab.selected != 3 {
+	if app.lab.selected != 4 {
+		t.Fatal("selection did not land on rotate row")
+	}
+	app.handle(c1device.KeyDown)
+	if app.lab.selected != 4 {
 		t.Fatal("selection escaped settings rows")
+	}
+	app.handle(c1device.KeyRight)
+	if app.lab.settings.Rotate != c1device.Rotate90 || !app.orientation().Portrait() {
+		t.Fatal("rotate row did not enter portrait")
 	}
 	app.handle(c1device.KeyBack)
 	if got, _ := app.currentBookmark(); app.view != viewReader || got != before {

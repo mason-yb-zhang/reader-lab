@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"path/filepath"
 
 	"c1device"
 )
@@ -16,6 +17,7 @@ const (
 	viewReader
 	viewPercentJump
 	viewLabSettings
+	viewRecent
 )
 
 const (
@@ -35,7 +37,13 @@ const (
 )
 
 type readerApp struct {
+	libraryRoot       string
+	libraryDir        string
+	shelfSelections   map[string]shelfSelection
 	books             []Book
+	recentBooks       []Book
+	recentIndex       int
+	fromRecent        bool
 	bookIndex         int
 	chapterIndex      int
 	chapterPick       int
@@ -71,6 +79,7 @@ func newReaderApp(booksDir string, uiFace, bodyFace *c1device.Face, store Progre
 		return nil, err
 	}
 	return &readerApp{
+		libraryRoot: filepath.Clean(booksDir), libraryDir: filepath.Clean(booksDir),
 		books: books, uiFace: uiFace, bodyFace: bodyFace,
 		store: store, bookmarkStore: bookmarkStore, view: viewShelf,
 	}, nil
@@ -90,6 +99,8 @@ func (app *readerApp) handleEvent(event c1device.Event) (exit bool) {
 			return false
 		}
 	}
+	// Visual arrows follow the rotated screen; volume keys stay physical page turns.
+	event.Key = app.orientation().RemapKey(event.Key)
 	// Use volume + for down and volume - for up, as requested for navigation.
 	// The numeric jump dialog retains +/- values.
 	if app.view != viewPercentJump {
@@ -110,8 +121,24 @@ func (app *readerApp) handleEvent(event c1device.Event) (exit bool) {
 			app.bookIndex = moveSelection(app.bookIndex, 1, len(app.books))
 		case c1device.KeyOK, c1device.KeyRight:
 			app.openSelectedBook()
-		case c1device.KeyBack:
-			return true
+		case c1device.KeyBack, c1device.KeyLeft:
+			return app.leaveLibraryFolder()
+		case c1device.KeyRune:
+			if event.Rune == 'r' || event.Rune == 'R' {
+				app.openRecent()
+			}
+		}
+	case viewRecent:
+		switch event.Key {
+		case c1device.KeyUp:
+			app.recentIndex = moveSelection(app.recentIndex, -1, len(app.recentBooks))
+		case c1device.KeyDown:
+			app.recentIndex = moveSelection(app.recentIndex, 1, len(app.recentBooks))
+		case c1device.KeyOK, c1device.KeyRight:
+			app.openRecentBook()
+		case c1device.KeyBack, c1device.KeyLeft:
+			app.view = viewShelf
+			app.fromRecent = false
 		}
 	case viewChapters:
 		switch event.Key {
@@ -212,8 +239,23 @@ func moveSelection(current, delta, count int) int {
 }
 
 func (app *readerApp) openSelectedBook() {
-	if len(app.books) == 0 {
+	if app.bookIndex < 0 || app.bookIndex >= len(app.books) {
 		return
+	}
+	if app.books[app.bookIndex].IsDir {
+		app.changeLibraryDir(app.books[app.bookIndex].Path)
+		return
+	}
+	app.fromRecent = false
+	app.openBook(app.books[app.bookIndex].Path)
+}
+
+func (app *readerApp) openBook(path string) {
+	if app.libraryRoot != "" {
+		if err := checkLibraryBook(app.libraryRoot, path); err != nil {
+			app.message = err.Error()
+			return
+		}
 	}
 	// The delayed save belongs to the old document. Flush it before replacing
 	// that document, including when reopening the same book from the shelf.
@@ -221,7 +263,7 @@ func (app *readerApp) openSelectedBook() {
 		app.message = err.Error()
 		return
 	}
-	document, err := OpenDocument(app.books[app.bookIndex].Path)
+	document, err := OpenDocument(path)
 	if err != nil {
 		app.message = err.Error()
 		return
@@ -424,10 +466,11 @@ func (app *readerApp) readerHint() string {
 }
 
 func (app *readerApp) readerBodyHeight() int {
+	layout := app.pageLayout()
 	if app.fullscreen {
-		return fullscreenBodyHeight
+		return layout.fullscreenHeight
 	}
-	return readerBodyHeight
+	return layout.bodyHeight
 }
 
 func (app *readerApp) toggleFullscreen() {
@@ -517,7 +560,7 @@ func (app *readerApp) currentProgress() (Progress, bool) {
 }
 
 func (app *readerApp) render() c1device.Frame {
-	canvas := c1device.NewCanvas()
+	canvas := c1device.NewCanvasOrientation(app.orientation())
 	canvas.Clear()
 	switch app.view {
 	case viewShelf:
@@ -525,7 +568,9 @@ func (app *readerApp) render() c1device.Frame {
 		if app.lab != nil {
 			title = "墨页实验室"
 		}
-		app.renderList(canvas, title, bookNames(app.books), app.bookIndex, "本", "↑↓选择  →打开  BACK退出")
+		app.renderList(canvas, title, bookNames(app.books), app.bookIndex, "项", app.shelfHint())
+	case viewRecent:
+		app.renderList(canvas, "最近阅读", bookNames(app.recentBooks), app.recentIndex, "本", "←书架 ↑上移 ↓下移 →续读")
 	case viewChapters:
 		app.renderDirectory(canvas)
 	case viewBookmarks:
@@ -544,6 +589,9 @@ func bookNames(books []Book) []string {
 	names := make([]string, len(books))
 	for index := range books {
 		names[index] = books[index].Name
+		if books[index].IsDir {
+			names[index] = "[目录] " + names[index]
+		}
 	}
 	return names
 }
@@ -561,33 +609,52 @@ func (app *readerApp) bookmarkLabels() []string {
 }
 
 func (app *readerApp) renderList(canvas *c1device.Canvas, title string, items []string, selected int, unit, hint string) {
-	rowTop, headerBottom := readerHeaderBottom+2, readerHeaderBottom
+	layout := app.pageLayout()
+	rowTop, headerBottom := layout.headerBottom+2, layout.headerBottom
+	width := canvas.Width()
 	count := fmt.Sprintf("%d %s", len(items), unit)
 	if app.view == viewChapters {
 		count = app.directoryCount()
 	}
-	titleWidth := 290 - app.uiFace.Measure(count) - 14
+	titleWidth := width - 6 - app.uiFace.Measure(count) - 14
+	if app.view == viewShelf {
+		rowTop, headerBottom = 42, 40
+		buttonWidth := 94
+		canvas.DrawText(app.uiFace, 6, 19, fitShelfLocation(app.uiFace, app.shelfLocation(), width-buttonWidth-20))
+		canvas.DrawTextInverted(app.uiFace, image.Rect(width-buttonWidth-6, 19, width-6, 37), width-buttonWidth-2, 20, "R 最近阅读")
+	}
 	if app.view == viewChapters || app.view == viewBookmarks {
 		rowTop, headerBottom = 40, 40
-		canvas.DrawTextInverted(app.uiFace, image.Rect(6, 19, 82, 37), 12, 20, "O跳转")
+		buttonWidth := 76
+		if width < 200 {
+			buttonWidth = width/2 - 10
+		}
+		canvas.DrawTextInverted(app.uiFace, image.Rect(6, 19, 6+buttonWidth, 37), 12, 20, fitText(app.uiFace, "O跳转", buttonWidth-12))
 		shortcut := "P书签"
 		if app.view == viewBookmarks {
 			shortcut = "P删除"
 		}
-		canvas.DrawTextInverted(app.uiFace, image.Rect(88, 19, 164, 37), 94, 20, shortcut)
+		left := 6 + buttonWidth + 6
+		canvas.DrawTextInverted(app.uiFace, image.Rect(left, 19, left+buttonWidth, 37), left+6, 20, fitText(app.uiFace, shortcut, buttonWidth-12))
 	}
 	canvas.DrawText(app.uiFace, 6, 1, fitText(app.uiFace, title, titleWidth))
-	canvas.DrawTextRight(app.uiFace, 290, 1, count)
-	canvas.FillRect(image.Rect(4, headerBottom-2, 292, headerBottom))
+	canvas.DrawTextRight(app.uiFace, width-6, 1, count)
+	canvas.FillRect(image.Rect(4, headerBottom-2, width-4, headerBottom))
 	if len(items) == 0 {
 		emptyTitle, emptyHint := "暂无内容", "请连接设备后添加文件"
+		if app.view == viewShelf {
+			emptyTitle, emptyHint = "暂无可显示内容", "←返回上层，根目录退出"
+		}
 		if title == "书签" {
 			emptyTitle, emptyHint = "暂无书签", "阅读时按 → 添加书签"
 		}
-		canvas.DrawTextCentered(app.uiFace, c1device.DisplayWidth/2, 52, emptyTitle)
-		canvas.DrawTextCentered(app.uiFace, c1device.DisplayWidth/2, 78, emptyHint)
+		if app.view == viewRecent {
+			emptyTitle, emptyHint = "暂无阅读记录", "开始阅读后自动记录"
+		}
+		canvas.DrawTextCentered(app.uiFace, width/2, 52, emptyTitle)
+		canvas.DrawTextCentered(app.uiFace, width/2, 78, fitText(app.uiFace, emptyHint, width-16))
 	} else {
-		visible := (readerListFooterTop - rowTop) / readerListRowHeight
+		visible := (layout.listFooterTop - rowTop) / layout.listRowHeight
 		start := selected - visible/2
 		if start < 0 {
 			start = 0
@@ -599,54 +666,56 @@ func (app *readerApp) renderList(canvas *c1device.Canvas, title string, items []
 			}
 		}
 		for index := start; index < len(items) && index < start+visible; index++ {
-			top := rowTop + (index-start)*readerListRowHeight
+			top := rowTop + (index-start)*layout.listRowHeight
 			prefix := "  "
 			if index == selected {
 				prefix = "› "
 			}
-			text := fitText(app.uiFace, prefix+items[index], 274)
+			text := fitText(app.uiFace, prefix+items[index], width-22)
 			if index == selected {
-				canvas.DrawTextInverted(app.uiFace, image.Rect(5, top, 286, top+readerListRowHeight-1), 8, top+1, text)
+				canvas.DrawTextInverted(app.uiFace, image.Rect(5, top, width-10, top+layout.listRowHeight-1), 8, top+1, text)
 			} else {
 				canvas.DrawText(app.uiFace, 8, top+1, text)
 			}
 		}
-		canvas.DrawScrollIndicator(290, rowTop, readerListFooterTop, selected, len(items))
+		canvas.DrawScrollIndicator(width-6, rowTop, layout.listFooterTop, selected, len(items))
 	}
 	footer := hint
 	if app.message != "" {
-		footer = fitText(app.uiFace, app.message, 280)
+		footer = fitText(app.uiFace, app.message, width-16)
 	}
-	if app.message == "" && (app.view == viewChapters || app.view == viewBookmarks) {
+	if app.message == "" && (app.view == viewShelf || app.view == viewChapters || app.view == viewBookmarks || app.view == viewRecent) {
 		app.drawNavigationFooter(canvas, hint)
 	} else {
-		canvas.DrawInvertedTextBar(app.uiFace, image.Rect(0, readerListFooterTop, c1device.DisplayWidth, c1device.DisplayHeight), footer)
+		canvas.DrawInvertedTextBar(app.uiFace, image.Rect(0, layout.listFooterTop, width, canvas.Height()), fitText(app.uiFace, footer, width-16))
 	}
 }
 
 func (app *readerApp) renderReader(canvas *c1device.Canvas) {
+	layout := app.pageLayout()
 	if app.fullscreen {
-		app.renderReaderBody(canvas, fullscreenBodyTop)
+		app.renderReaderBody(canvas, layout.fullscreenTop)
 		return
 	}
+	width := canvas.Width()
 	percent := 0.0
 	if len(app.pages) > 0 && app.document.Size > 0 {
 		percent = float64(app.pages[app.pageIndex].Start) * 100 / float64(app.document.Size)
 	}
 	percentage := fmt.Sprintf("%.2f%%", percent)
 	pageLabel := app.chapterPageLabel()
-	percentLeft := 290 - app.uiFace.Measure(percentage)
+	percentLeft := width - 6 - app.uiFace.Measure(percentage)
 	pageLeft := percentLeft - 10 - app.uiFace.Measure(pageLabel)
 	canvas.DrawText(app.uiFace, 6, 1, fitText(app.uiFace, app.document.contextualChapterTitle(app.chapterIndex), pageLeft-14))
 	canvas.DrawText(app.uiFace, pageLeft, 1, pageLabel)
-	canvas.DrawTextRight(app.uiFace, 290, 1, percentage)
-	canvas.FillRect(image.Rect(4, readerHeaderBottom-2, 292, readerHeaderBottom))
-	app.renderReaderBody(canvas, readerBodyTop)
+	canvas.DrawTextRight(app.uiFace, width-6, 1, percentage)
+	canvas.FillRect(image.Rect(4, layout.headerBottom-2, width-4, layout.headerBottom))
+	app.renderReaderBody(canvas, layout.bodyTop)
 	footer := app.readerHint()
 	if app.message != "" {
 		footer = app.message
 	}
-	canvas.DrawInvertedTextBar(app.uiFace, image.Rect(0, readerFooterTop, c1device.DisplayWidth, c1device.DisplayHeight), footer)
+	canvas.DrawInvertedTextBar(app.uiFace, image.Rect(0, layout.footerTop, width, canvas.Height()), fitText(app.uiFace, footer, width-16))
 }
 
 func (app *readerApp) renderReaderBody(canvas *c1device.Canvas, top int) {

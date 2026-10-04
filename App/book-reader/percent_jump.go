@@ -204,25 +204,32 @@ func (app *readerApp) handlePercentJump(event c1device.Event) {
 }
 
 func (app *readerApp) renderPercentJump(canvas *c1device.Canvas) {
+	layout := app.pageLayout()
+	width := canvas.Width()
+	center := width / 2
 	canvas.DrawText(app.uiFace, 6, 1, "百分比跳转")
-	canvas.DrawTextRight(app.uiFace, 290, 1, "长按±5%")
-	canvas.FillRect(image.Rect(4, readerHeaderBottom-2, 292, readerHeaderBottom))
-	canvas.DrawTextCentered(app.uiFace, c1device.DisplayWidth/2, 28, percentInputHint)
+	canvas.DrawTextRight(app.uiFace, width-6, 1, "长按±5%")
+	canvas.FillRect(image.Rect(4, layout.headerBottom-2, width-4, layout.headerBottom))
+	canvas.DrawTextCentered(app.uiFace, center, 28, fitText(app.uiFace, percentInputHint, width-16))
 	text := app.percentText() + "%"
-	canvas.DrawTextInverted(app.bodyFace, image.Rect(90, 51, 206, 79),
-		148-app.bodyFace.Measure(text)/2, 53, text)
+	boxHalf := 58
+	if width < 200 {
+		boxHalf = width/2 - 8
+	}
+	canvas.DrawTextInverted(app.bodyFace, image.Rect(center-boxHalf, 51, center+boxHalf, 79),
+		center-app.bodyFace.Measure(text)/2, 53, text)
 	chapterIndex, _, ok := positionForPercentUnits(app.document, app.selectedPercent())
 	if ok {
-		canvas.DrawTextCentered(app.uiFace, 148, 82,
-			fitText(app.uiFace, app.document.positionLabel(chapterIndex), 280))
-		canvas.DrawTextCentered(app.uiFace, 148, 104,
-			fitText(app.uiFace, app.document.Chapters[chapterIndex].Title, 280))
+		canvas.DrawTextCentered(app.uiFace, center, 82,
+			fitText(app.uiFace, app.document.positionLabel(chapterIndex), width-16))
+		canvas.DrawTextCentered(app.uiFace, center, 104,
+			fitText(app.uiFace, app.document.Chapters[chapterIndex].Title, width-16))
 	} else {
-		canvas.DrawTextCentered(app.uiFace, 148, 88, "请输入 0-100（最多两位小数）")
+		canvas.DrawTextCentered(app.uiFace, center, 88, fitText(app.uiFace, "请输入 0-100（最多两位小数）", width-16))
 	}
 	footer := percentJumpHint
 	if app.message != "" {
-		footer = fitText(app.uiFace, app.message, 280)
+		footer = app.message
 	}
-	canvas.DrawInvertedTextBar(app.uiFace, image.Rect(0, readerListFooterTop, c1device.DisplayWidth, c1device.DisplayHeight), footer)
+	canvas.DrawInvertedTextBar(app.uiFace, image.Rect(0, layout.listFooterTop, width, canvas.Height()), fitText(app.uiFace, footer, width-16))
 }

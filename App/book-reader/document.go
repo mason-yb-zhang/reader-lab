@@ -75,8 +75,11 @@ func OpenDocument(path string) (*Document, error) {
 		}
 		return document, nil
 	}
-	if strings.EqualFold(filepath.Ext(path), ".epub") {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".epub":
 		return openEPUBDocument(path, mark)
+	case ".mobi", ".azw3":
+		return openMOBIDocument(path, file, mark)
 	}
 	encoding, bom, err := detectEncoding(file)
 	if err != nil {

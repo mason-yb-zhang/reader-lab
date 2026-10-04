@@ -22,10 +22,11 @@ const maxLabFontBytes = 16 << 20
 var labFontSizes = []int{12, 14, 16, 18, 20, 24}
 
 type labSettings struct {
-	Font       string `json:"font"`
-	Size       int    `json:"size"`
-	Threshold  int    `json:"threshold"`
-	Fullscreen bool   `json:"fullscreen"`
+	Font       string              `json:"font"`
+	Size       int                 `json:"size"`
+	Threshold  int                 `json:"threshold"`
+	Fullscreen bool                `json:"fullscreen"`
+	Rotate     c1device.Orientation `json:"rotate"`
 }
 
 type labState struct {
@@ -76,6 +77,9 @@ func (settings labSettings) validate() error {
 	}
 	if settings.Threshold < 32 || settings.Threshold > 224 {
 		return fmt.Errorf("黑白阈值须在32至224之间")
+	}
+	if !settings.Rotate.Valid() {
+		return fmt.Errorf("方向仅支持横屏/竖屏/倒置")
 	}
 	return nil
 }
@@ -218,21 +222,23 @@ func (app *readerApp) applyLabSettings(settings labSettings, persist bool) error
 			}
 		}
 	}()
-	if newFace && (face.LineHeight() < settings.Size || face.LineHeight() > readerBodyHeight) {
+	if newFace && (face.LineHeight() < settings.Size || face.LineHeight() > labLayoutFor(settings.Rotate).bodyHeight) {
 		return fmt.Errorf("字体行高不适合阅读区域")
 	}
-	height := readerBodyHeight
+	layout := labLayoutFor(settings.Rotate)
+	height := layout.bodyHeight
 	if settings.Fullscreen {
-		height = fullscreenBodyHeight
+		height = layout.fullscreenHeight
 	}
+	textWidth := layout.textWidth
 	index := app.chapterPagination
 	pages, end := app.pages, app.windowEnd
 	bookmark, hasPosition := app.currentBookmark()
-	layoutChanged := newFace || settings.Fullscreen != app.fullscreen
+	layoutChanged := newFace || settings.Fullscreen != app.fullscreen || settings.Rotate != lab.settings.Rotate
 	if hasPosition && layoutChanged {
 		var err error
-		if !index.matches(app.document, app.document.Chapters[bookmark.Chapter], face, readerTextWidth, height) {
-			index, err = countChapterPagesForLayout(app.document, app.document.Chapters[bookmark.Chapter], face, readerTextWidth, height)
+		if !index.matches(app.document, app.document.Chapters[bookmark.Chapter], face, textWidth, height) {
+			index, err = countChapterPagesForLayout(app.document, app.document.Chapters[bookmark.Chapter], face, textWidth, height)
 		}
 		if err == nil {
 			pages, end, err = index.readWindow(bookmark.Offset)
@@ -308,9 +314,9 @@ func (app *readerApp) handleLabSettings(event c1device.Event) {
 	case c1device.KeyBack:
 		app.view = viewReader
 	case c1device.KeyUp:
-		lab.selected = moveSelection(lab.selected, -1, 4)
+		lab.selected = moveSelection(lab.selected, -1, 5)
 	case c1device.KeyDown:
-		lab.selected = moveSelection(lab.selected, 1, 4)
+		lab.selected = moveSelection(lab.selected, 1, 5)
 	case c1device.KeyLeft, c1device.KeyRight:
 		delta := 1
 		if event.Key == c1device.KeyLeft {
@@ -346,6 +352,15 @@ func (app *readerApp) handleLabSettings(event c1device.Event) {
 			}
 		case 3:
 			settings.Fullscreen = !settings.Fullscreen
+		case 4:
+			next := int(settings.Rotate) + delta
+			if next < 0 {
+				next = 3
+			}
+			if next > 3 {
+				next = 0
+			}
+			settings.Rotate = c1device.Orientation(next)
 		}
 		if settings != lab.settings {
 			if err := app.applyLabSettings(settings, true); err != nil {
@@ -374,6 +389,15 @@ func (app *readerApp) renderLabSettings(canvas *c1device.Canvas) {
 	if settings.Fullscreen {
 		full = "开启"
 	}
-	items := []string{"字体  " + font, fmt.Sprintf("字号  %d px", settings.Size), threshold, "全屏  " + full}
+	rotate := "横屏"
+	switch settings.Rotate {
+	case c1device.Rotate90:
+		rotate = "竖屏顺时针"
+	case c1device.Rotate180:
+		rotate = "横屏倒置"
+	case c1device.Rotate270:
+		rotate = "竖屏逆时针"
+	}
+	items := []string{"字体  " + font, fmt.Sprintf("字号  %d px", settings.Size), threshold, "全屏  " + full, "方向  " + rotate}
 	app.renderList(canvas, "阅读设置", items, app.lab.selected, "项", "↑↓选择 ←→调整 BACK返回")
 }

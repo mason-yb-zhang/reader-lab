@@ -22,7 +22,8 @@ type Face struct {
 }
 
 type Canvas struct {
-	image *image.Gray
+	image       *image.Gray
+	orientation Orientation
 }
 
 func ParseTypeface(data []byte) (*Typeface, error) {
@@ -95,10 +96,24 @@ func (face *Face) Wrap(text string, width int) []string {
 }
 
 func NewCanvas() *Canvas {
-	canvas := &Canvas{image: image.NewGray(image.Rect(0, 0, DisplayWidth, DisplayHeight))}
+	return NewCanvasOrientation(Rotate0)
+}
+
+// NewCanvasOrientation creates a drawing surface in logical orientation.
+// Frame always packs the natural 296x152 panel layout.
+func NewCanvasOrientation(orientation Orientation) *Canvas {
+	width, height := orientation.LogicalSize()
+	canvas := &Canvas{
+		image:       image.NewGray(image.Rect(0, 0, width, height)),
+		orientation: orientation,
+	}
 	canvas.Clear()
 	return canvas
 }
+
+func (canvas *Canvas) Width() int  { return canvas.image.Bounds().Dx() }
+func (canvas *Canvas) Height() int { return canvas.image.Bounds().Dy() }
+func (canvas *Canvas) Orientation() Orientation { return canvas.orientation }
 
 func (canvas *Canvas) Clear() {
 	for index := range canvas.image.Pix {
@@ -284,13 +299,18 @@ func (canvas *Canvas) FillRect(rect image.Rectangle) {
 
 func (canvas *Canvas) Frame(threshold uint8) Frame {
 	var output Frame
-	for y := 0; y < DisplayHeight; y++ {
-		for x := 0; x < DisplayWidth; x++ {
+	bounds := canvas.image.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			if canvas.image.GrayAt(x, y).Y >= threshold {
 				continue
 			}
-			offset := (y/8)*DisplayWidth + x
-			output[offset] |= 0x80 >> (y & 7)
+			px, py := canvas.orientation.MapToPhysical(x, y)
+			if px < 0 || px >= DisplayWidth || py < 0 || py >= DisplayHeight {
+				continue
+			}
+			offset := (py/8)*DisplayWidth + px
+			output[offset] |= 0x80 >> (py & 7)
 		}
 	}
 	return output

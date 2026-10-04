@@ -21,7 +21,7 @@ func TestNativeFontResumesExistingBytePosition(t *testing.T) {
 		t.Fatal(err)
 	}
 	offset := int64(len("第一章 测试\n") + len("原来的阅读位置应当保留。")*7)
-	store := ProgressStore{Dir: filepath.Join(root, "state")}
+	store := ProgressStore{Dir: t.TempDir()}
 	if err := store.Save(Progress{Path: path, Fingerprint: mark, Chapter: 0, Offset: offset, LayoutVersion: 3}); err != nil {
 		t.Fatal(err)
 	}

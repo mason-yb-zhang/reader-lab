@@ -26,7 +26,7 @@ func TestExpandedHeadingIndexPreservesOldTXTProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := ProgressStore{Dir: filepath.Join(root, "state")}
+	store := ProgressStore{Dir: t.TempDir()}
 	if err := store.Save(Progress{Path: path, Fingerprint: mark, Chapter: 0, Offset: offset}); err != nil {
 		t.Fatal(err)
 	}

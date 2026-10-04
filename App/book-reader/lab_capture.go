@@ -23,13 +23,20 @@ func drawLabFrame(platform c1device.Platform, app *readerApp, full bool) error {
 	if bookmark, ok := app.currentBookmark(); ok {
 		offset = bookmark.Offset
 	}
+	selectedPath := ""
+	if app.bookIndex >= 0 && app.bookIndex < len(app.books) {
+		selectedPath = app.books[app.bookIndex].Path
+	}
 	data, err := json.Marshal(struct {
-		View       viewMode `json:"view"`
-		Fullscreen bool     `json:"fullscreen"`
-		Offset     int64    `json:"offset"`
-		LineHeight int      `json:"lineHeight"`
-		Message    string   `json:"message"`
-	}{app.view, app.fullscreen, offset, app.bodyFace.LineHeight(), app.message})
+		View         viewMode `json:"view"`
+		Fullscreen   bool     `json:"fullscreen"`
+		Rotate       uint8    `json:"rotate"`
+		Offset       int64    `json:"offset"`
+		LineHeight   int      `json:"lineHeight"`
+		Message      string   `json:"message"`
+		LibraryDir   string   `json:"libraryDir"`
+		SelectedPath string   `json:"selectedPath"`
+	}{app.view, app.fullscreen, uint8(app.orientation()), offset, app.bodyFace.LineHeight(), app.message, app.libraryDir, selectedPath})
 	if err != nil {
 		return err
 	}

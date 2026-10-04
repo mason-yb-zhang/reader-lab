@@ -41,26 +41,27 @@ func NewBitmapFace(data []byte, lineHeight int) (*Face, error) {
 // Draw native row bits directly, as c1pkg_text does. This avoids per-string
 // alpha masks and the TrueType rasterizer entirely for the bitmap path.
 func (canvas *Canvas) drawBitmap(b *bitmapFace, x, top int, text string) {
-	if top <= -16 || top >= DisplayHeight || x >= DisplayWidth {
+	width, height := canvas.Width(), canvas.Height()
+	if top <= -16 || top >= height || x >= width {
 		return
 	}
 	left := int64(x)
 	for _, r := range text {
 		i := b.index(r) * 37
 		w := int(b.data[i+4])
-		if left >= DisplayWidth {
+		if left >= int64(width) {
 			break
 		}
 		if left+int64(w) > 0 {
 			for row := 0; row < 16; row++ {
 				y := top + row
-				if y < 0 || y >= DisplayHeight {
+				if y < 0 || y >= height {
 					continue
 				}
 				bits := binary.BigEndian.Uint16(b.data[i+5+row*2:])
 				for col := 0; col < w; col++ {
 					px := left + int64(col)
-					if px >= 0 && px < DisplayWidth && bits&(0x8000>>uint(col)) != 0 {
+					if px >= 0 && px < int64(width) && bits&(0x8000>>uint(col)) != 0 {
 						canvas.setBlack(int(px), y)
 					}
 				}

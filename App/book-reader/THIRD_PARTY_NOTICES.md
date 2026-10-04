@@ -2,9 +2,11 @@
 
 The embedded GNU Unifont 16.0.04 subset is copied pixel-for-pixel from the C1ancher package manager. Its SIL OFL 1.1 license and copyright notices are in font-LICENSE.txt (source: assets/font-LICENSE.txt). No user books are distributed.
 
-The archive includes the application and c1device sources, font inputs and generation/build scripts, and complete original source ZIPs of golang.org/x/image v0.45.0, golang.org/x/text v0.41.0 and golang.org/x/sys v0.47.0 with their original license notices. See BUILDING.md for an offline rebuild using Go 1.26.4 (official toolchain source: https://go.dev/dl/go1.26.4.src.tar.gz). The Go toolchain itself is not bundled. First-party code is GPL-3.0-only, with its complete license in LICENSE; fonts and dependencies retain their separate terms.
+The archive includes the application and c1device sources, font inputs and generation/build scripts, and the original upstream dependency archives. The reader's current pinned modules are golang.org/x/image v0.45.0, golang.org/x/net v0.59.0, golang.org/x/text v0.42.0 and golang.org/x/sys v0.48.0; run go mod download before an offline build because the historical third-party/goproxy material does not contain all current versions. The Go toolchain itself is not bundled. First-party code is GPL-3.0-only, with its complete license in LICENSE; fonts and dependencies retain their separate terms.
 
-Go runtime and golang.org/x/image, golang.org/x/text, golang.org/x/sys:
+The internal/mobiformat format algorithms are adapted from KindleUnpack, revision bf0ca6e (https://github.com/kevinhendricks/KindleUnpack), under GPL v3. Copyright 2009 Charles M. Hannum; extensions 2009-2020 P. Durrant, K. Hendricks, S. Siebert, fandrieu, DiapDealer, nickredding, and tkeo. The Go implementation uses bounded records and disk spans instead of whole-book buffers. The complete GPL v3 text is in the application LICENSE. No DRM removal code or third-party sample books are included.
+
+Go runtime and golang.org/x/image, golang.org/x/net, golang.org/x/text, golang.org/x/sys:
 
 Copyright 2009 The Go Authors.
 

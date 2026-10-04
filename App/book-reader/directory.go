@@ -158,6 +158,9 @@ func (app *readerApp) leaveDirectory() {
 		return
 	}
 	app.view = viewShelf
+	if app.fromRecent {
+		app.view = viewRecent
+	}
 }
 
 func (app *readerApp) directoryHint() string {
@@ -187,7 +190,9 @@ func (app *readerApp) directoryCount() string {
 
 func (app *readerApp) renderDirectory(canvas *c1device.Canvas) {
 	title := "章节"
-	if len(app.books) > 0 {
+	if app.fromRecent && app.recentIndex >= 0 && app.recentIndex < len(app.recentBooks) {
+		title = app.recentBooks[app.recentIndex].Name
+	} else if app.bookIndex >= 0 && app.bookIndex < len(app.books) {
 		title = app.books[app.bookIndex].Name
 	}
 	rows, selected := app.directoryRows()
